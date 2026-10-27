@@ -264,9 +264,10 @@ class MedicalTextParser:
 
         data.composition = composition_items
 
-        # Identify Brand Name: usually the largest/cleanest line near the top that isn't metadata
-        for line in lines[:4]:
-            if not any(k in line.lower() for k in ["exp", "mfg", "batch", "b.no", "contains", "store", "keep", "schedule"]):
+        # Identify Brand Name: usually the largest/cleanest line near the top that isn't metadata or warnings
+        for line in lines[:6]:
+            lower_l = line.lower()
+            if not any(k in lower_l for k in ["exp", "mfg", "batch", "b.no", "contains", "store", "keep", "schedule", "caution", "warning", "not to be sold", "rx", "only"]):
                 form_m = self.form_pattern.search(line)
                 if form_m:
                     data.dosage_form = form_m.group(1).capitalize()

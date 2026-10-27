@@ -8,6 +8,11 @@ import os
 import logging
 from typing import List, Tuple, Optional, Union
 import numpy as np
+
+# Disable oneDNN MKLDNN to avoid PIR conversion regression on CPU
+os.environ["FLAGS_use_mkldnn"] = "0"
+os.environ["PADDLE_PDX_ENABLE_MKLDNN_BYDEFAULT"] = "0"
+
 from .schemas import OCRBoundingBox
 
 logger = logging.getLogger("rx_ocr.engine")
@@ -38,15 +43,16 @@ class PaddleOCREngine:
 
         try:
             from paddleocr import PaddleOCR
-            logger.info("Initializing PaddleOCR with lang=%s, angle_cls=%s", self.lang, self.use_angle_cls)
-            self._ocr = PaddleOCR(
-                use_angle_cls=self.use_angle_cls,
-                lang=self.lang,
-                use_gpu=self.use_gpu,
-                det_limit_side_len=self.det_limit_side_len,
-                det_db_unclip_ratio=self.det_db_unclip_ratio,
-                show_log=False
-            )
+            logger.info("Initializing PaddleOCR with lang=%s", self.lang)
+            # PaddleOCR v3 / PaddleX initialization
+            try:
+                self._ocr = PaddleOCR(lang=self.lang)
+            except Exception:
+                self._ocr = PaddleOCR(
+                    use_angle_cls=self.use_angle_cls,
+                    lang=self.lang,
+                    use_gpu=self.use_gpu
+                )
             self._is_initialized = True
         except ImportError as e:
             logger.error("PaddleOCR is not installed or dependencies are missing: %s", e)
@@ -63,19 +69,42 @@ class PaddleOCREngine:
         except Exception:
             return False
 
-    def detect(self, img: np.ndarray) -> List[OCRBoundingBox]:
+    def detect(self, img_input: Union[str, np.ndarray]) -> List[OCRBoundingBox]:
         """
-        Runs text detection and recognition on an image numpy array.
+        Runs text detection and recognition on an image (path or numpy array).
         Returns a topologically sorted list of OCRBoundingBox objects.
         """
         self._initialize()
 
-        raw_results = self._ocr.ocr(img, cls=self.use_angle_cls)
+        boxes: List[OCRBoundingBox] = []
+
+        # PaddleOCR v3 (PaddleX) pipeline support
+        if hasattr(self._ocr, "predict"):
+            try:
+                preds = list(self._ocr.predict(img_input))
+                if preds and len(preds) > 0:
+                    first = preds[0]
+                    # v3 returns rec_texts, rec_scores, rec_polys
+                    if isinstance(first, dict) and "rec_texts" in first:
+                        texts = first.get("rec_texts", [])
+                        scores = first.get("rec_scores", [])
+                        polys = first.get("rec_polys", [])
+                        for i in range(len(texts)):
+                            txt = str(texts[i]).strip()
+                            score = float(scores[i]) if i < len(scores) else 1.0
+                            poly = polys[i].tolist() if i < len(polys) and hasattr(polys[i], 'tolist') else []
+                            if txt:
+                                boxes.append(OCRBoundingBox(box=poly, text=txt, confidence=score))
+                        return self._sort_reading_order(boxes)
+            except Exception as e:
+                logger.warning("Predict failed, falling back to ocr(): %s", e)
+
+        # PaddleOCR v2 fallback
+        raw_results = self._ocr.ocr(img_input, cls=self.use_angle_cls)
 
         if not raw_results or raw_results[0] is None:
             return []
 
-        boxes: List[OCRBoundingBox] = []
         for line in raw_results[0]:
             box_coords = line[0]        # 4 vertices: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]]
             text, confidence = line[1]   # Recognized string & confidence (0.0 to 1.0)
@@ -88,7 +117,6 @@ class PaddleOCREngine:
                     confidence=float(confidence)
                 ))
 
-        # Sort lines top-to-bottom, left-to-right
         return self._sort_reading_order(boxes)
 
     @staticmethod
