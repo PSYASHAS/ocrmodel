@@ -4,7 +4,14 @@ Allows easy integration with Flutter, React Native, iOS, Android, and Web apps.
 """
 
 import os
+import sys
 import io
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.utils import secure_filename
 from rx_ocr.pipeline import PrescriptionOCRPipeline
@@ -12,8 +19,12 @@ from rx_ocr.pipeline import PrescriptionOCRPipeline
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max image size
 
-# Initialize the pipeline
+# Initialize and pre-warm the pipeline
 pipeline = PrescriptionOCRPipeline(lang="en", use_angle_cls=True, use_gpu=False)
+try:
+    pipeline.engine.warmup()
+except Exception as _e:
+    pass
 
 HTML_DEMO_PAGE = """
 <!DOCTYPE html>
@@ -162,4 +173,6 @@ def extract_raw():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    print(f"\n[+] Medicine OCR Web Server running at: http://localhost:{port}")
+    print(f"[+] Direct API Health Check: http://localhost:{port}/api/v1/health\n")
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

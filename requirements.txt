@@ -1,4 +1,8 @@
-# Core Deep Learning & OCR Engine
+# High-Performance ONNX OCR Engine (~10x faster on CPU)
+rapidocr-onnxruntime>=1.2.0
+onnxruntime>=1.16.0
+
+# PaddlePaddle & PaddleOCR (Base Framework)
 paddlepaddle>=3.0.0b0; sys_platform == 'win32' and python_version >= '3.13'
 paddleocr>=2.8.0
 
