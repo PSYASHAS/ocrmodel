@@ -1,0 +1,13 @@
+# Core Deep Learning & OCR Engine
+paddlepaddle>=3.0.0b0; sys_platform == 'win32' and python_version >= '3.13'
+paddleocr>=2.8.0
+
+# Image Processing & CV
+opencv-python>=4.8.0
+Pillow>=9.5.0
+numpy>=1.23.0
+
+# Web API & Schema
+Flask>=3.0.0
+werkzeug>=3.0.0
+pydantic>=2.0.0
